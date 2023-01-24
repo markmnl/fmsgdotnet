@@ -3,9 +3,8 @@ using System.Text;
 
 namespace FmsgExtensions
 {
-    public static class BinaryWriterExtensions
+    public static class BinaryExtensions
     {
-
         public static void WriteASCIIPrefixedUTF8(this BinaryWriter writer, string str)
         {
             writer.Write((byte)str.Length);
@@ -16,6 +15,22 @@ namespace FmsgExtensions
         {
             writer.Write((byte)str.Length);
             writer.Write(Encoding.UTF8.GetBytes(str));
+        }
+
+        public static string ReadUInt8PrefixedASCII(this BinaryReader reader)
+        {
+            var length = reader.ReadByte();
+            if (length == 0)
+                return String.Empty;
+            return Encoding.ASCII.GetString(reader.ReadBytes(length));
+        }
+
+        public static string ReadUInt8PrefixedUTF8(this BinaryReader reader)
+        {
+            var length = reader.ReadByte();
+            if (length == 0)
+                return String.Empty;
+            return Encoding.UTF8.GetString(reader.ReadBytes(length));
         }
     }
 

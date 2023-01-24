@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using FmsgExtensions;
+using System.Security.Cryptography;
 
 namespace FMsg
 {
@@ -47,7 +48,9 @@ namespace FMsg
         public long Timestamp { get; set; }
         public string? Topic { get; set; }
         public string Type { get; private set; } = String.Empty;
-        public byte[] Body { get; private set; } = new byte[0];
+        public string BodyFilepath { get; private set; }
+        // TODO attachments
+
 
         public FMsgMessage(string from, string[] to, string? topic = null)
         {
@@ -61,22 +64,28 @@ namespace FMsg
             this.Topic = topic;
         }
 
-        public void SetBody(string mimeType, byte[] body)
+        internal FMsgMessage()
         {
-            var count = Encoding.ASCII.GetByteCount(mimeType);
-            if (count > byte.MaxValue)
-                throw new ArgumentException($"Too long mime-type: {mimeType}");
-            Type = mimeType;
-            Body = body;
+            From = "";
         }
 
-        public void SetBodyUTF8(string text)
+        // public void SetBody(string mimeType, byte[] body)
+        // {
+        //     var count = Encoding.ASCII.GetByteCount(mimeType);
+        //     if (count > byte.MaxValue)
+        //         throw new ArgumentException($"Too long mime-type: {mimeType}");
+        //     Type = mimeType;
+        //     Body = body;
+        // }
+
+        public void SetBodyUTF8(string filepath)
         {
-            Type = "text/plain; charset=utf-8"; // see https://www.iana.org/assignments/media-types/media-types.xhtml
-            if (!String.IsNullOrEmpty(text)) 
+            if(!File.Exists(filepath))
             {
-                Body = Encoding.UTF8.GetBytes(text);
+                throw new FileNotFoundException($"{filepath} not found");
             }
+            Type = "text/plain;charset=utf-8"; // see https://www.iana.org/assignments/media-types/media-types.xhtml
+            BodyFilepath = filepath;
         }
 
         public static void ValidateAddress(string address)
@@ -105,7 +114,7 @@ namespace FMsg
         public void UnsetNoVerify() { UnsetFlag(FmsgFlag.NoVerify); }
         public void UnsetUnderDuress() { UnsetFlag(FmsgFlag.UnderDuress); }
 
-        public byte[] Encode()
+        public byte[] EncodeHeader()
         {
             // validate this msg first
             if (From == String.Empty)
@@ -138,25 +147,37 @@ namespace FMsg
                     writer.Write((byte)0);
                 }
                 else
-                {
+                { 
                     writer.WriteUInt8PrefixedUTF8(Topic);
                 }
                 writer.WriteASCIIPrefixedUTF8(Type);
-                writer.Write((uint)Body.LongLength);
-                if(Body.Length > 0)
-                {
-                    writer.Write(Body);
-                }
-                writer.Write((byte)0); // TODO attachments
-
                 return stream.ToArray();
             }
         }
 
-        public static FMsgMessage Decode()
+        public static FMsgMessage DecodeHeader(Stream stream)
         {
-            // TODO
-            var msg = new FMsgMessage("TODO", new string[] {"TODO"} );
+            var msg = new FMsgMessage();
+            using(var reader = new BinaryReader(stream))
+            {
+                msg.Flags = (FmsgFlag)reader.ReadByte();
+                if (msg.Flags.HasFlag(FmsgFlag.HasPid))
+                {
+                    msg.Pid = reader.ReadBytes(32);
+                    // TODO check pid known
+                }
+                msg.From = reader.ReadUInt8PrefixedUTF8();
+                msg.Timestamp = reader.ReadInt64();
+                var toCount = reader.ReadByte();
+                msg.To = new string[toCount];
+                for(var i = 0; i < toCount; i++)
+                {
+                    msg.To[i] = reader.ReadUInt8PrefixedUTF8();
+                }
+                msg.Topic = reader.ReadUInt8PrefixedASCII();
+                
+                    
+            }
             return msg;
         }
 
