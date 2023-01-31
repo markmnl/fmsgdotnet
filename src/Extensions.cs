@@ -1,8 +1,24 @@
+using FMsg;
 using System.IO;
 using System.Text;
 
 namespace FmsgExtensions
 {
+    public static class FMsgMessageExtensions
+    {
+        public static FMsgAddress ReadFmsgAddress(this BinaryReader reader)
+        {
+            var str = reader.ReadUInt8PrefixedUTF8();
+            return FMsgAddress.Parse(str);
+        }
+
+        public static void WriteFmsgAddress(this BinaryWriter writer, FMsgAddress addr)
+        {
+            var str = addr.ToString();
+            writer.WriteUInt8PrefixedUTF8(str);
+        }
+    }
+
     public static class BinaryExtensions
     {
         public static void WriteASCIIPrefixedUTF8(this BinaryWriter writer, string str)

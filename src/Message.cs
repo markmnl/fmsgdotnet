@@ -1,8 +1,5 @@
-using System;
-using System.IO;
-using System.Text;
-using System.Text.RegularExpressions;
 using FmsgExtensions;
+using System.Net;
 using System.Security.Cryptography;
 
 namespace FMsg
@@ -13,16 +10,9 @@ namespace FMsg
         HasPid = 0,
         Important = 1 << 1,
         NoReply = 1 << 2,
-        NoVerify = 1 << 3,
+        NoChallenge = 1 << 3,
         UnderDuress = 1 << 7
 
-    }
-
-    public class InvalidFmsgAddressException : Exception
-    {
-        public InvalidFmsgAddressException(string reason) : base(reason)
-        {
-        }
     }
 
     public class InvalidFmsgException : Exception
@@ -31,7 +21,7 @@ namespace FMsg
         {
         }
     }
-    
+
     public class FMsgMessage
     {
         public const byte Version = 1;
@@ -40,33 +30,34 @@ namespace FMsg
         public FmsgFlag Flags { get; private set; }
         public bool IsImportant { get { return (Flags & FmsgFlag.Important) == FmsgFlag.Important; } }
         public bool IsNoReply { get { return (Flags & FmsgFlag.NoReply) == FmsgFlag.NoReply; } }
-        public bool IsNoVerify { get { return (Flags & FmsgFlag.NoVerify) == FmsgFlag.NoVerify; } }
+        public bool IsNoChallenge { get { return (Flags & FmsgFlag.NoChallenge) == FmsgFlag.NoChallenge; } }
         public bool IsUnderDuress { get { return (Flags & FmsgFlag.UnderDuress) == FmsgFlag.UnderDuress; } }
         public byte[]? Pid { get; set; }
-        public string From { get; private set; }
-        public string[] To { get; set; } = new string[0];
+        public FMsgAddress From { get; private set; }
+        public FMsgAddress[] To { get; set; } = new FMsgAddress[0];
         public long Timestamp { get; set; }
         public string? Topic { get; set; }
         public string Type { get; private set; } = String.Empty;
         public string BodyFilepath { get; private set; }
+        public IPEndPoint RemoteEndPoint { get; set; }
         // TODO attachments
 
 
         public FMsgMessage(string from, string[] to, string? topic = null)
         {
-            ValidateAddress(from);
-            this.From = from;
-            foreach(var addr in to)
+            this.From = FMsgAddress.Parse(from);
+            this.To = new FMsgAddress[to.Length];
+            for (var i = 0; i < to.Length; i++)
             {
-                ValidateAddress(addr);
+                var addr = FMsgAddress.Parse((string)to[i]);
+                this.To[i] = addr;
             }
-            this.To = to;
             this.Topic = topic;
         }
 
         internal FMsgMessage()
         {
-            From = "";
+            From = null;
         }
 
         // public void SetBody(string mimeType, byte[] body)
@@ -88,36 +79,19 @@ namespace FMsg
             BodyFilepath = filepath;
         }
 
-        public static void ValidateAddress(string address)
-        {
-            if (String.IsNullOrWhiteSpace(address))
-                throw new InvalidFmsgAddressException("Null or empty");
-            if (!address.StartsWith('@'))
-                throw new InvalidFmsgAddressException("Missing leading '@' character");
-            var i = address.LastIndexOf("@");
-            if (i < 1)
-                throw new InvalidFmsgAddressException("Missing a second '@' seperating recipient and domain");
-            var recipient = address.Substring(1, i);
-            // if (!RecipientRegEx.IsMatch(recipient))
-            //     throw new InvalidFmsgAddressException($"Invalid recipient part: {recipient}");
-            var domain = address.Substring(i+1);
-            if (System.Uri.CheckHostName(domain) == System.UriHostNameType.Unknown)
-                throw new InvalidFmsgAddressException($"Invalid domain part: {domain}");
-        }
-
         public void SetImportant() { SetFlag(FmsgFlag.Important); }
         public void SetNoReply() { SetFlag(FmsgFlag.NoReply); }
-        public void SetNoVerify() { SetFlag(FmsgFlag.NoVerify); }
+        public void SetNoChallenge() { SetFlag(FmsgFlag.NoChallenge); }
         public void SetUnderDuress() { SetFlag(FmsgFlag.UnderDuress); }
         public void UnsetImportant() { UnsetFlag(FmsgFlag.Important); }
         public void UnsetNoReply() { UnsetFlag(FmsgFlag.NoReply); }
-        public void UnsetNoVerify() { UnsetFlag(FmsgFlag.NoVerify); }
+        public void UnsetNoChallenge() { UnsetFlag(FmsgFlag.NoChallenge); }
         public void UnsetUnderDuress() { UnsetFlag(FmsgFlag.UnderDuress); }
 
         public byte[] EncodeHeader()
         {
             // validate this msg first
-            if (From == String.Empty)
+            if (From == null)
                 throw new InvalidFmsgException("From is required");
             if (Type == String.Empty)
                 throw new InvalidFmsgException("Type is required");
@@ -135,11 +109,11 @@ namespace FMsg
                     SetFlag(FmsgFlag.HasPid);
                     writer.Write(Pid);
                 }
-                writer.WriteUInt8PrefixedUTF8(From);
+                writer.WriteFmsgAddress(From);
                 writer.Write((byte)To.Length);
                 foreach(var addr in To)
                 {
-                    writer.WriteUInt8PrefixedUTF8(addr);
+                    writer.WriteFmsgAddress(addr);
                 }
                 writer.Write(Timestamp);
                 if (Topic == null)
@@ -166,19 +140,29 @@ namespace FMsg
                     msg.Pid = reader.ReadBytes(32);
                     // TODO check pid known
                 }
-                msg.From = reader.ReadUInt8PrefixedUTF8();
+                msg.From = reader.ReadFmsgAddress();
                 msg.Timestamp = reader.ReadInt64();
                 var toCount = reader.ReadByte();
-                msg.To = new string[toCount];
+                msg.To = new FMsgAddress[toCount];
                 for(var i = 0; i < toCount; i++)
                 {
-                    msg.To[i] = reader.ReadUInt8PrefixedUTF8();
+                    msg.To[i] = reader.ReadFmsgAddress();
                 }
                 msg.Topic = reader.ReadUInt8PrefixedASCII();
-                
-                    
             }
             return msg;
+        }
+
+        public Task<byte[]> CalcMessageHashAsync() 
+        {
+            if (String.IsNullOrEmpty(BodyFilepath))
+                throw new InvalidOperationException("body filepath not net");
+
+            using(var hasher = SHA256.Create())
+            using (var fileStream = File.OpenRead(BodyFilepath))
+            {
+                return await hasher.ComputeHashAsync(fileStream); 
+            }
         }
 
         private void SetFlag(FmsgFlag flag)
