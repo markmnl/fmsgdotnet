@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using FmsgExtensions;
 
 namespace FMsg
@@ -10,13 +11,13 @@ namespace FMsg
 
         static async Task Main(string[] args)
         {
-            var processMessagesTask = ProcessOutgoingAsync(host);
-            var listenConnectionsTask = ProcessIncomingAsync(host);
+            var outTask = ProcessOutgoingAsync(host);
+            var inTask = ProcessIncomingAsync(host);
 
             Console.CancelKeyPress += OnCancelKeyPress;
             processOutgoing = true;
             
-            await Task.WhenAll(processMessagesTask, listenConnectionsTask);
+            await Task.WhenAll(outTask, inTask);
         }
 
         private static void Stop()
@@ -38,6 +39,7 @@ namespace FMsg
 
         private static async Task ProcessOutgoingAsync(FMsgHost host)
         {
+            Console.WriteLine($"Processing outgoing...");
             while (processOutgoing) 
             {
                 try 
@@ -45,7 +47,7 @@ namespace FMsg
                     // TODO watch out dir
                     var msg = new FMsgMessage("@markmnl@localhost", new string[] { "@test@localhost" }, "Genisis");
                     msg.SetBodyUTF8("Hello fmsg!");
-                    await host.SendAsync(msg, "127.0.0.1:36900");
+                    await host.SendAsync(msg);
                     await Task.Delay(5000);
                 }
                 catch (Exception ex) 

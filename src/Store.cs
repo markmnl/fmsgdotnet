@@ -1,15 +1,19 @@
-﻿using FMsg;
-using MimeTypes;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using MimeTypes;
 
 namespace FMsg
 {
     internal static class Store
     {
+        public static string StoreOutgoing(FMsgMessage msg, byte[] data)
+        {
+            var ext = MimeTypeMap.GetMimeType(msg.Type);
+            var filepath = Path.Join($"{Config.DataDir}/{msg.From.Domain}/{msg.From.User}/", msg.Timestamp.ToString(), ext);
+
+            File.WriteAllBytes(filepath, data);
+
+            return filepath;
+        }
+
 
         public static async Task<RejectAcceptCode[]> TryStoreIncomingAsync(FMsgMessage msg, BinaryReader reader) 
         {
@@ -17,7 +21,7 @@ namespace FMsg
             var tmppath = Path.GetTempFileName();
             try
             {
-                var recipients = msg.To.Where(r => r.Domain.ToLowerInvariant() == Config.Domain.ToLowerInvariant()).ToArray();
+                var recipients = msg.To.Where(r => string.Equals(r.Domain, Config.Domain, StringComparison.OrdinalIgnoreCase)).ToArray();
                 if (recipients.Count() == 0)
                     throw new FmsgProtocolException($"recieved message has no recipients for {Config.Domain}");
                 var size = reader.ReadUInt32();

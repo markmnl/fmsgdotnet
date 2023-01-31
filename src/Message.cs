@@ -1,6 +1,7 @@
 using FmsgExtensions;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace FMsg
 {
@@ -69,14 +70,11 @@ namespace FMsg
         //     Body = body;
         // }
 
-        public void SetBodyUTF8(string filepath)
+        public void SetBodyUTF8(string body)
         {
-            if(!File.Exists(filepath))
-            {
-                throw new FileNotFoundException($"{filepath} not found");
-            }
-            Type = "text/plain;charset=utf-8"; // see https://www.iana.org/assignments/media-types/media-types.xhtml
-            BodyFilepath = filepath;
+            Type = "text/plain; charset=utf-8"; // see https://www.iana.org/assignments/media-types/media-types.xhtml
+            var bytes = Encoding.UTF8.GetBytes(body);
+            BodyFilepath = Store.StoreOutgoing(this, bytes);
         }
 
         public void SetImportant() { SetFlag(FmsgFlag.Important); }
@@ -153,7 +151,7 @@ namespace FMsg
             return msg;
         }
 
-        public Task<byte[]> CalcMessageHashAsync() 
+        public async Task<byte[]> CalcMessageHashAsync() 
         {
             if (String.IsNullOrEmpty(BodyFilepath))
                 throw new InvalidOperationException("body filepath not net");

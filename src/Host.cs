@@ -52,6 +52,7 @@ namespace FMsg
         private readonly ConcurrentDictionary<FMsgMessage, byte[]> incoming = new();
 
         private volatile bool listening = false;
+        private Socket listener;
 
         public FMsgHost()
         {
@@ -62,16 +63,22 @@ namespace FMsg
             if (listening == false)
                 throw new InvalidOperationException("Cannot stop becuase not listening");
             listening = false;
-            // TODO should we block till active sockets closed?
+            try
+            {
+                listener.Shutdown(SocketShutdown.Both);
+                listener.Close();
+            }
+            catch { }
         }
 
         public async Task ListenAsync()
         {
             var ipEndPoint = new IPEndPoint(IPAddress.Any, Config.Port);
-            using Socket listener = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            listener = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             listener.Bind(ipEndPoint);
             listener.Listen(100);
             listening = true;
+            Console.WriteLine($"Listening on {ipEndPoint}...");
             while (listening)
             {
                 try
@@ -102,11 +109,9 @@ namespace FMsg
         {
             var uniqueHosts = msg.To.Select(r => r.Domain).Distinct();
             var header = msg.EncodeHeader();
-            using (SHA256 hasher = SHA256.Create())
-            {
-                var headerHash = hasher.ComputeHash(header);
-                outgoing[headerHash] = msg;
-            }
+            using var hasher = SHA256.Create();
+            var headerHash = hasher.ComputeHash(header);
+            outgoing[headerHash] = msg;
 
             foreach (var host in uniqueHosts)
             {
@@ -114,14 +119,10 @@ namespace FMsg
                 {
                     var ipEndPoint = IPEndPoint.Parse($"{host}:{port}");
                     Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
                     await client.ConnectAsync(ipEndPoint);
-
                     await client.SendAsync(header);
-
                     var buffer = new byte[uniqueHosts.Count()];
                     var count = await client.ReceiveAsync(buffer);
-
                     if (count == 0)
                     {
                         Console.WriteLine($"Failed to send to, {host}: EOF");
@@ -132,18 +133,30 @@ namespace FMsg
                     }
                     else
                     {
-                        Console.WriteLine($"Failed to send to, {host}: REJECTED - {buffer[0]}")
+                        var hostRecipients = msg.To.Where(addr => addr.Domain == host).ToArray();
+                        if (count != hostRecipients.Length)
+                        {
+                            Console.WriteLine($"Recieved unexpected number of RejectAccept codes, expected: {hostRecipients.Length}, got: {count}");
+                        }
+                        else
+                        {
+                            for (var i = 0; i < count; i++)
+                            {
+                                var code = (RejectAcceptCode)buffer[i];
+                                Console.WriteLine($"\t{hostRecipients[i]}\t{code}");
+                            }
+                        }
                     }
-
                     client.Close();
                     client.Shutdown(SocketShutdown.Both);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to send to, {host}: {ex}");
+                    Console.WriteLine($"Exception sending to, {host}: {ex}");
                 }
             }
-            outgoing.Remove(headerHash);
+            FMsgMessage removedMsg;
+            outgoing.TryRemove(headerHash, value: out removedMsg);
         }
 
         private async Task HandleConnAsync(Socket sock)
@@ -161,16 +174,17 @@ namespace FMsg
                 if(version == 255) // i.e. this is a CHALLENGE
                 {
                     var headerHash = reader.ReadBytes(32);
-                    if(outgoing.ContainsKey(headerHash))
+                    FMsgMessage outgoingMsg;
+                    if(outgoing.TryGetValue(headerHash, out outgoingMsg))
                     {
-                        await HandleChallengeAsync(reader);
-                        return;
+                        var msgHash = await outgoingMsg.CalcMessageHashAsync();
+                        await sock.SendAsync(msgHash);
                     }
                     else 
                     {
                         Console.WriteLine($"Outgoing not found for CHALLENGE from: {remoteEndPoint}");
-                        return;
                     }
+                    return;
                 }
 
                 msg = FMsgMessage.DecodeHeader(stream);
@@ -241,12 +255,6 @@ namespace FMsg
             await client.ReceiveAsync(msgHash);
 
             incoming[msg] = msgHash;
-
-            return true;
-        }
-
-        private async Task<bool> HandleChallengeAsync(BinaryReader reader)
-        {
 
             return true;
         }
