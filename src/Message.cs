@@ -12,6 +12,7 @@ namespace FMsg
         Important = 1 << 1,
         NoReply = 1 << 2,
         NoChallenge = 1 << 3,
+
         UnderDuress = 1 << 7
 
     }
@@ -42,6 +43,8 @@ namespace FMsg
         public string BodyFilepath { get; private set; }
         public IPEndPoint RemoteEndPoint { get; set; }
         // TODO attachments
+
+        private byte[] messageHash;
 
 
         public FMsgMessage(string from, string[] to, string? topic = null)
@@ -127,27 +130,23 @@ namespace FMsg
             }
         }
 
-        public static FMsgMessage DecodeHeader(Stream stream)
+        public static FMsgMessage DecodeHeader(BinaryReader reader)
         {
             var msg = new FMsgMessage();
-            using(var reader = new BinaryReader(stream))
+            msg.Flags = (FmsgFlag)reader.ReadByte();
+            if (msg.Flags.HasFlag(FmsgFlag.HasPid))
             {
-                msg.Flags = (FmsgFlag)reader.ReadByte();
-                if (msg.Flags.HasFlag(FmsgFlag.HasPid))
-                {
-                    msg.Pid = reader.ReadBytes(32);
-                    // TODO check pid known
-                }
-                msg.From = reader.ReadFmsgAddress();
-                msg.Timestamp = reader.ReadInt64();
-                var toCount = reader.ReadByte();
-                msg.To = new FMsgAddress[toCount];
-                for(var i = 0; i < toCount; i++)
-                {
-                    msg.To[i] = reader.ReadFmsgAddress();
-                }
-                msg.Topic = reader.ReadUInt8PrefixedASCII();
+                msg.Pid = reader.ReadBytes(32);
             }
+            msg.From = reader.ReadFmsgAddress();
+            msg.Timestamp = reader.ReadInt64();
+            var toCount = reader.ReadByte();
+            msg.To = new FMsgAddress[toCount];
+            for(var i = 0; i < toCount; i++)
+            {
+                msg.To[i] = reader.ReadFmsgAddress();
+            }
+            msg.Topic = reader.ReadUInt8PrefixedASCII();
             return msg;
         }
 
@@ -156,11 +155,16 @@ namespace FMsg
             if (String.IsNullOrEmpty(BodyFilepath))
                 throw new InvalidOperationException("body filepath not net");
 
-            using(var hasher = SHA256.Create())
-            using (var fileStream = File.OpenRead(BodyFilepath))
+            if (messageHash == null)
             {
-                return await hasher.ComputeHashAsync(fileStream); 
+                using (var hasher = SHA256.Create())
+                using (var fileStream = File.OpenRead(BodyFilepath))
+                {
+                    messageHash = await hasher.ComputeHashAsync(fileStream);
+                }
             }
+
+            return messageHash;
         }
 
         private void SetFlag(FmsgFlag flag)

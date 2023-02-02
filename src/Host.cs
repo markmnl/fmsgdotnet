@@ -11,7 +11,7 @@ namespace FMsg
     {
         public FMsgDecodeException(string msg) : base(msg)
         {
-            
+
         }
     }
 
@@ -47,17 +47,12 @@ namespace FMsg
         /// </summary>
         private readonly ConcurrentDictionary<byte[], FMsgMessage> outgoing = new();
 
-        /// <summary>
-        /// Maps hash of messages being received keyed on instance of message
-        /// </summary>
-        private readonly ConcurrentDictionary<FMsgMessage, byte[]> incoming = new();
-
         private volatile bool listening = false;
         private Socket listener;
 
         public FMsgHost()
         {
-        }   
+        }
 
         public void StopListening()
         {
@@ -84,12 +79,12 @@ namespace FMsg
             {
                 try
                 {
-                    using (var handler = await listener.AcceptAsync())
+                    using (var socket = await listener.AcceptAsync())
                     {
-                        await HandleConnAsync(handler);
+                        await HandleConnAsync(socket);
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     // TODO more specific
                     Console.WriteLine(ex.ToString());
@@ -100,7 +95,7 @@ namespace FMsg
                 listener.Shutdown(SocketShutdown.Both);
                 listener.Close();
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());
             }
@@ -113,55 +108,59 @@ namespace FMsg
             using var hasher = SHA256.Create();
             var headerHash = hasher.ComputeHash(header);
             outgoing[headerHash] = msg;
-
             if (msg.Timestamp == 0)
                 msg.Timestamp = DateTime.UtcNow.Timestamp();
-
-            foreach (var host in uniqueHosts)
+            try
             {
-                try
+                foreach (var host in uniqueHosts)
                 {
-                    var ipEndPoint = IPEndPoint.Parse($"{host}:{port}");
-                    Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                    await client.ConnectAsync(ipEndPoint);
-                    await client.SendAsync(header);
-                    var buffer = new byte[uniqueHosts.Count()];
-                    var count = await client.ReceiveAsync(buffer);
-                    if (count == 0)
+                    try
                     {
-                        Console.WriteLine($"Failed to send to, {host}: EOF");
-                    }
-                    else if (count == 1)
-                    {
-                        Console.WriteLine($"Failed to send to, {host}: REJECTED - {buffer[0]}"); // TODO lookup reason
-                    }
-                    else
-                    {
+                        var ipEndPoint = IPEndPoint.Parse($"{host}:{port}");
+                        Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                        await client.ConnectAsync(ipEndPoint);
+                        await client.SendAsync(header);
                         var hostRecipients = msg.To.Where(addr => addr.Domain == host).ToArray();
-                        if (count != hostRecipients.Length)
+                        var buffer = new byte[hostRecipients.Length];
+                        var count = await client.ReceiveAsync(buffer);
+                        if (count == 0)
                         {
-                            Console.WriteLine($"Recieved unexpected number of RejectAccept codes, expected: {hostRecipients.Length}, got: {count}");
+                            Console.WriteLine($"Failed to send to, {host}: EOF");
+                        }
+                        else if (count == 1)
+                        {
+                            Console.WriteLine($"Failed to send to, {host}: REJECTED - {(RejectAcceptCode)buffer[0]}");
                         }
                         else
                         {
-                            for (var i = 0; i < count; i++)
+
+                            if (count != hostRecipients.Length)
                             {
-                                var code = (RejectAcceptCode)buffer[i];
-                                Console.WriteLine($"\t{hostRecipients[i]}\t{code}");
+                                Console.WriteLine($"Recieved unexpected number of RejectAccept codes, expected: {hostRecipients.Length}, got: {count}");
+                            }
+                            else
+                            {
+                                for (var i = 0; i < count; i++)
+                                {
+                                    var code = (RejectAcceptCode)buffer[i];
+                                    Console.WriteLine($"\t{hostRecipients[i]}\t{code}");
+                                }
                             }
                         }
+                        client.Close();
+                        client.Shutdown(SocketShutdown.Both);
                     }
-                    client.Close();
-                    client.Shutdown(SocketShutdown.Both);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Exception sending to, {host}: {ex}");
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Exception sending to, {host}: {ex}");
+                    }
                 }
             }
-            FMsgMessage removedMsg;
-            outgoing.TryRemove(headerHash, out removedMsg);
-
+            finally
+            {
+                FMsgMessage removedMsg;
+                outgoing.TryRemove(headerHash, value: out removedMsg);
+            }
         }
 
         private async Task HandleConnAsync(Socket sock)
@@ -172,51 +171,66 @@ namespace FMsg
                 FMsgMessage msg;
                 var remoteEndPoint = (IPEndPoint)sock.RemoteEndPoint;
                 var version = reader.ReadByte();
-                if(version != 1)
-                { 
+                if (version != 1)
+                {
                     throw new FMsgDecodeException($"Unsupported message version: {version}");
                 }
-                if(version == 255) // i.e. this is a CHALLENGE
+                if (version == 255) // i.e. this is a CHALLENGE
                 {
                     var headerHash = reader.ReadBytes(32);
                     FMsgMessage outgoingMsg;
-                    if(outgoing.TryGetValue(headerHash, out outgoingMsg))
+                    if (outgoing.TryGetValue(headerHash, out outgoingMsg))
                     {
                         var msgHash = await outgoingMsg.CalcMessageHashAsync();
                         await sock.SendAsync(msgHash);
                     }
-                    else 
+                    else
                     {
-                        Console.WriteLine($"Outgoing not found for CHALLENGE from: {remoteEndPoint}");
+                        throw new FmsgProtocolException($"Outgoing not found for CHALLENGE from: {remoteEndPoint}");
                     }
                     return;
                 }
 
-                msg = FMsgMessage.DecodeHeader(stream);
+                msg = FMsgMessage.DecodeHeader(reader);
                 msg.RemoteEndPoint = remoteEndPoint;
+                var size = reader.ReadUInt32();
 
-                // TODO validate header e.g. timestamp
+                //  TODO check pid if present
 
-                // CHALLENGE
-                if (msg.IsNoChallenge) 
+                //  TODO check timestamp
+
+                //  check any recipients for us
+                var recipients = msg.To.Where(r => String.Equals(r.Domain, Config.Domain, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (recipients.Length == 0)
+                    throw new FmsgProtocolException($"recieved message has no recipients for {Config.Domain}");
+                
+                // check message size
+                RejectAcceptCode[] response;
+                if (size > Config.MaxMessageSize)
                 {
-                    if (!Config.AllowSkipChallenge)
-                    {
-                        // TODO, reject or terminate?
-                        return;
-                    }
+                    response = new RejectAcceptCode[] { RejectAcceptCode.TooBig };
                 }
-                else 
+                else
                 {
-                    var success = await TryChallengeAsync(msg);
-                    if (!success)
+                    // CHALLENGE
+                    byte[]? incomingMessageHash = null;
+                    if (msg.IsNoChallenge)
                     {
-                        return;
+                        if (!Config.AllowSkipChallenge)
+                        {
+                            // TODO, reject or terminate?
+                            return;
+                        }
                     }
-                } 
+                    else
+                    {
+                        incomingMessageHash = await ChallengeAsync(msg);
+                    }
 
-                var results = await Store.TryStoreIncomingAsync(msg, reader);
-                await RejectAcceptAsync(sock, results);
+                    response = await Store.StoreIncomingAsync(msg, recipients, stream, size, incomingMessageHash);
+                }
+
+                await RejectAcceptAsync(sock, response);
             }
 
             // gracefully close connection 
@@ -225,13 +239,13 @@ namespace FMsg
                 sock.Shutdown(SocketShutdown.Both);
                 sock.Close();
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());
             }
         }
 
-        private async Task<bool> TryChallengeAsync(FMsgMessage msg)
+        private async Task<byte[]> ChallengeAsync(FMsgMessage msg)
         {
             var header = msg.EncodeHeader();
             var ipEndPoint = IPEndPoint.Parse($"{msg.From.Domain}:{msg.RemoteEndPoint.Port}");
@@ -239,11 +253,11 @@ namespace FMsg
 
             // Before connecting, verify domain message is from indeed exists at IP message received from.
             // Otherwise we could challenge an unsuspecting host fraudulent messages purport to be from.
+            //
             var addresses = await Dns.GetHostAddressesAsync(msg.From.Domain);
             if (!addresses.Any(a => a == msg.RemoteEndPoint.Address))
             {
-                Console.WriteLine($"From domain: {msg.From.Domain}, does not resolve to IP address of sender: {msg.RemoteEndPoint.Address}, got: {addresses}");
-                return false;
+                throw new FmsgProtocolException($"From domain: {msg.From.Domain}, does not resolve to an IP address for sender: {msg.RemoteEndPoint.Address}, got: {addresses}");
             }
 
             await client.ConnectAsync(ipEndPoint);
@@ -259,15 +273,13 @@ namespace FMsg
             byte[] msgHash = new byte[SHA256.HashSizeInBytes];
             await client.ReceiveAsync(msgHash);
 
-            incoming[msg] = msgHash;
-
-            return true;
+            return msgHash;
         }
 
         private async Task RejectAcceptAsync(Socket sock, RejectAcceptCode[] codes)
         {
             var codeArray = new byte[codes.Length];
-            for(var i = 0; i < codes.Length; i++)
+            for (var i = 0; i < codes.Length; i++)
             {
                 codeArray[i] = (byte)codes[i];
             }
