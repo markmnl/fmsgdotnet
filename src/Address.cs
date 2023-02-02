@@ -30,7 +30,7 @@
             var i = address.IndexOf('@', 1);
             if (i < 1)
                 throw new InvalidFmsgAddressException("missing 2nd @");
-            var recipient = address.Substring(1, i);
+            var recipient = address.Substring(1, i-1);
             // TODO only letters, numbers _ or hyphen non consecutivly and not at beginning or end
             var domain = address.Substring(i + 1);
             if (Uri.CheckHostName(domain) == UriHostNameType.Unknown)

@@ -12,7 +12,7 @@ namespace FMsg
         public static string Domain { get; set; } = Environment.GetEnvironmentVariable("FMSG_DOMAIN") ?? "localhost";
         public static readonly uint MaxMessageSize = 1024 * 10;
         public static bool AllowSkipChallenge = false;
-        public static string DataDir { get; set; } = Environment.GetEnvironmentVariable("FMSG_DATA_DIR") ?? "./data";
+        public static string DataDir { get; set; } = Environment.GetEnvironmentVariable("FMSG_DATA_DIR") ?? "/tmp/fmsgdata";
         public static string IncomingDir { get; set; } = Path.Join(DataDir, "tmp");
     }
 }

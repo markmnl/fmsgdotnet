@@ -36,7 +36,7 @@ namespace FMsg
         public byte[]? Pid { get; set; }
         public FMsgAddress From { get; private set; }
         public FMsgAddress[] To { get; set; } = new FMsgAddress[0];
-        public long Timestamp { get; set; }
+        public long Timestamp { get; internal set; }
         public string? Topic { get; set; }
         public string Type { get; private set; } = String.Empty;
         public string BodyFilepath { get; private set; }
@@ -87,7 +87,7 @@ namespace FMsg
         public void UnsetUnderDuress() { UnsetFlag(FmsgFlag.UnderDuress); }
 
         public byte[] EncodeHeader()
-        {
+        {   
             // validate this msg first
             if (From == null)
                 throw new InvalidFmsgException("From is required");

@@ -1,3 +1,4 @@
+using FmsgExtensions;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -113,6 +114,9 @@ namespace FMsg
             var headerHash = hasher.ComputeHash(header);
             outgoing[headerHash] = msg;
 
+            if (msg.Timestamp == 0)
+                msg.Timestamp = DateTime.UtcNow.Timestamp();
+
             foreach (var host in uniqueHosts)
             {
                 try
@@ -156,7 +160,8 @@ namespace FMsg
                 }
             }
             FMsgMessage removedMsg;
-            outgoing.TryRemove(headerHash, value: out removedMsg);
+            outgoing.TryRemove(headerHash, out removedMsg);
+
         }
 
         private async Task HandleConnAsync(Socket sock)

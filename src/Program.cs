@@ -7,16 +7,18 @@ namespace FMsg
     class Program
     {
         private static readonly FMsgHost host = new FMsgHost();
-        private static volatile bool processOutgoing = false;
+        private static volatile bool processOutgoing = true;
 
         static async Task Main(string[] args)
         {
+            // TODO checks, e.g. data dir exists
+
+
             var outTask = ProcessOutgoingAsync(host);
             var inTask = ProcessIncomingAsync(host);
 
             Console.CancelKeyPress += OnCancelKeyPress;
-            processOutgoing = true;
-            
+
             await Task.WhenAll(outTask, inTask);
         }
 

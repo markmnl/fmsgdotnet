@@ -7,7 +7,7 @@ namespace FMsg
         public static string StoreOutgoing(FMsgMessage msg, byte[] data)
         {
             var ext = MimeTypeMap.GetMimeType(msg.Type);
-            var filepath = Path.Join($"{Config.DataDir}/{msg.From.Domain}/{msg.From.User}/", msg.Timestamp.ToString(), ext);
+            var filepath = Path.Join($"{Config.DataDir}/{msg.From.Domain}/{msg.From.User}/out/", msg.Timestamp.ToString(), ext);
 
             File.WriteAllBytes(filepath, data);
 
