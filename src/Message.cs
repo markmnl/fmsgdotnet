@@ -64,15 +64,6 @@ namespace FMsg
             From = null;
         }
 
-        // public void SetBody(string mimeType, byte[] body)
-        // {
-        //     var count = Encoding.ASCII.GetByteCount(mimeType);
-        //     if (count > byte.MaxValue)
-        //         throw new ArgumentException($"Too long mime-type: {mimeType}");
-        //     Type = mimeType;
-        //     Body = body;
-        // }
-
         public void SetBodyUTF8(string body)
         {
             Type = "text/plain; charset=utf-8"; // see https://www.iana.org/assignments/media-types/media-types.xhtml
@@ -89,15 +80,22 @@ namespace FMsg
         public void UnsetNoChallenge() { UnsetFlag(FmsgFlag.NoChallenge); }
         public void UnsetUnderDuress() { UnsetFlag(FmsgFlag.UnderDuress); }
 
-        public byte[] EncodeHeader()
-        {   
-            // validate this msg first
+        public void ValidateHeader()
+        {
             if (From == null)
                 throw new InvalidFmsgException("From is required");
             if (Type == String.Empty)
                 throw new InvalidFmsgException("Type is required");
             if (To.Length == 0)
                 throw new InvalidFmsgException("At least one recipient in To is required");
+            if (Timestamp < 1)
+                throw new InvalidFmsgException($"Invalid Timestamp: {Timestamp}");
+        }
+
+        public byte[] EncodeHeader()
+        {
+            // validate this msg first
+            ValidateHeader();
 
             // seralise to the spec: https://github.com/markmnl/fmsg#definition
             using(var stream = new MemoryStream())

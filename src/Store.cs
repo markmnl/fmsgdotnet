@@ -1,4 +1,5 @@
-﻿using MimeTypes;
+﻿using FmsgExtensions;
+using MimeTypes;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 
@@ -8,9 +9,12 @@ namespace FMsg
     {
         public static string StoreOutgoing(FMsgMessage msg, byte[] data)
         {
-            var ext = MimeTypeMap.GetMimeType(msg.Type);
+            var ext = MimeTypeMap.GetExtension(msg.Type, throwErrorIfNotFound: false);
+            if (msg.Timestamp == default(long))
+                msg.Timestamp = DateTime.UtcNow.Timestamp();
             var filepath = Path.Join(Config.DataDir, msg.Timestamp.ToString(), ext);
 
+            Directory.CreateDirectory(Path.GetDirectoryName(filepath));
             File.WriteAllBytes(filepath, data);
 
             return filepath;

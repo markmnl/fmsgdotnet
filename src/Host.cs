@@ -81,6 +81,8 @@ namespace FMsg
                 {
                     using (var socket = await listener.AcceptAsync())
                     {
+                        socket.SendTimeout = Config.SendTimeout;
+                        socket.ReceiveTimeout = Config.ReceiveTimeout;
                         await HandleConnAsync(socket);
                     }
                 }
@@ -103,22 +105,22 @@ namespace FMsg
 
         public async Task SendAsync(FMsgMessage msg, int port = DefaultPort)
         {
+            msg.ValidateHeader();
             var uniqueHosts = msg.To.Select(r => r.Domain).Distinct();
             var header = msg.EncodeHeader();
             using var hasher = SHA256.Create();
             var headerHash = hasher.ComputeHash(header);
             outgoing[headerHash] = msg;
-            if (msg.Timestamp == 0)
-                msg.Timestamp = DateTime.UtcNow.Timestamp();
             try
             {
                 foreach (var host in uniqueHosts)
                 {
                     try
                     {
-                        var ipEndPoint = IPEndPoint.Parse($"{host}:{port}");
-                        Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                        await client.ConnectAsync(ipEndPoint);
+                        Socket client = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                        client.SendTimeout = Config.SendTimeout;
+                        client.ReceiveTimeout = Config.ReceiveTimeout;
+                        await client.ConnectAsync(host, port);
                         await client.SendAsync(header);
                         var hostRecipients = msg.To.Where(addr => addr.Domain == host).ToArray();
                         var buffer = new byte[hostRecipients.Length];
@@ -233,7 +235,7 @@ namespace FMsg
                 await RejectAcceptAsync(sock, response);
             }
 
-            // gracefully close connection 
+            // gracefully close connection since we got this far
             try
             {
                 sock.Shutdown(SocketShutdown.Both);
