@@ -1,7 +1,9 @@
+using fmsgdotnet;
 using FmsgExtensions;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection.Metadata.Ecma335;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -45,7 +47,7 @@ namespace FMsg
         /// <summary>
         /// Maps messages being sent keyed on header hash
         /// </summary>
-        private readonly ConcurrentDictionary<byte[], FMsgMessage> outgoing = new();
+        private readonly ConcurrentDictionary<byte[], FMsgMessage> outgoing = new(new BuffersComparer());
 
         private volatile bool listening = false;
         private Socket listener;
@@ -81,6 +83,7 @@ namespace FMsg
                 {
                     using (var socket = await listener.AcceptAsync())
                     {
+                        Console.WriteLine($"Connection from {socket.RemoteEndPoint}");
                         socket.SendTimeout = Config.SendTimeout;
                         socket.ReceiveTimeout = Config.ReceiveTimeout;
                         await HandleConnAsync(socket);
@@ -105,8 +108,11 @@ namespace FMsg
 
         public async Task SendAsync(FMsgMessage msg, int port = DefaultPort)
         {
+            if (!msg.BodySize.HasValue)
+                throw new ArgumentException("msg.BodySize not set");
+
             msg.ValidateHeader();
-            var uniqueHosts = msg.To.Select(r => r.Domain).Distinct();
+            var uniqueHosts = msg.To.Select(r => r.Domain).Distinct(); // TODO ignore case compare
             var header = msg.EncodeHeader();
             using var hasher = SHA256.Create();
             var headerHash = hasher.ComputeHash(header);
@@ -121,10 +127,19 @@ namespace FMsg
                         client.SendTimeout = Config.SendTimeout;
                         client.ReceiveTimeout = Config.ReceiveTimeout;
                         await client.ConnectAsync(host, port);
+
+                        // send the header, size and body..
+                        Console.WriteLine($"--> {host} {headerHash.ToHexString()}");
                         await client.SendAsync(header);
-                        var hostRecipients = msg.To.Where(addr => addr.Domain == host).ToArray();
+                        var sizeInBytes = BitConverter.GetBytes(msg.BodySize.Value);
+                        await client.SendAsync(sizeInBytes);
+                        using var ns = new NetworkStream(client);
+                        using var fs = new FileStream(msg.BodyFilepath, FileMode.Open);
+                        await fs.CopyToAsync(ns);
+
+                        var hostRecipients = msg.To.Where(addr => String.Equals(addr.Domain, host, StringComparison.OrdinalIgnoreCase)).ToArray();
                         var buffer = new byte[hostRecipients.Length];
-                        var count = await client.ReceiveAsync(buffer);
+                        var count = await client.ReceiveAsync(buffer); // TODO why not timing out?
                         if (count == 0)
                         {
                             Console.WriteLine($"Failed to send to, {host}: EOF");
@@ -173,14 +188,11 @@ namespace FMsg
                 FMsgMessage msg;
                 var remoteEndPoint = (IPEndPoint)sock.RemoteEndPoint;
                 var version = reader.ReadByte();
-                if (version != 1)
-                {
-                    throw new FMsgDecodeException($"Unsupported message version: {version}");
-                }
                 if (version == 255) // i.e. this is a CHALLENGE
                 {
                     var headerHash = reader.ReadBytes(32);
-                    FMsgMessage outgoingMsg;
+                    FMsgMessage? outgoingMsg;
+                    Console.WriteLine($"<-- CHALLENGE {headerHash.ToHexString()}");
                     if (outgoing.TryGetValue(headerHash, out outgoingMsg))
                     {
                         var msgHash = await outgoingMsg.CalcMessageHashAsync();
@@ -192,19 +204,25 @@ namespace FMsg
                     }
                     return;
                 }
+                if (version != 1)
+                {
+                    throw new FMsgDecodeException($"Unsupported message version: {version}");
+                }
+                
 
                 msg = FMsgMessage.DecodeHeader(reader);
                 msg.RemoteEndPoint = remoteEndPoint;
                 var size = reader.ReadUInt32();
 
-                //  TODO check pid if present
-
-                //  TODO check timestamp
+                // TODO check pid if present
+                // TODO check timestamp
 
                 //  check any recipients for us
                 var recipients = msg.To.Where(r => String.Equals(r.Domain, Config.Domain, StringComparison.OrdinalIgnoreCase)).ToArray();
                 if (recipients.Length == 0)
                     throw new FmsgProtocolException($"recieved message has no recipients for {Config.Domain}");
+
+                // TODO check we know recepients
                 
                 // check message size
                 RejectAcceptCode[] response;
@@ -250,7 +268,7 @@ namespace FMsg
         private async Task<byte[]> ChallengeAsync(FMsgMessage msg)
         {
             var header = msg.EncodeHeader();
-            var ipEndPoint = IPEndPoint.Parse($"{msg.From.Domain}:{msg.RemoteEndPoint.Port}");
+            var ipEndPoint = IPEndPoint.Parse($"{msg.From.Domain}:{Config.RemotePort}");
             var client = new Socket(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
             // Before connecting, verify domain message is from indeed exists at IP message received from.

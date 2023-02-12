@@ -10,7 +10,7 @@ namespace FMsg
         public static string StoreOutgoing(FMsgMessage msg, byte[] data)
         {
             var ext = MimeTypeMap.GetExtension(msg.Type, throwErrorIfNotFound: false);
-            if (msg.Timestamp == default(long))
+            if (msg.Timestamp == default)
                 msg.Timestamp = DateTime.UtcNow.Timestamp();
             var filepath = Path.Join(Config.DataDir, msg.Timestamp.ToString(), ext);
 

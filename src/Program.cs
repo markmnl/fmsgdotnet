@@ -20,6 +20,8 @@ namespace FMsg
             Console.CancelKeyPress += OnCancelKeyPress;
 
             await Task.WhenAll(outTask, inTask);
+
+            Console.WriteLine("Bye!");
         }
 
         private static void Stop()
@@ -48,14 +50,15 @@ namespace FMsg
                 {
                     // TODO watch out dir
                     var msg = new FMsgMessage("@markmnl@localhost", new string[] { "@test@localhost" }, "Genisis");
+                    Console.WriteLine($"sending msg {msg.From} --> { String.Join(", ", (object[])msg.To)} {msg.Timestamp}");
                     msg.SetBodyUTF8("Hello fmsg!");
-                    await host.SendAsync(msg);
-                    await Task.Delay(5000);
+                    await host.SendAsync(msg, Config.RemotePort);
                 }
                 catch (Exception ex) 
                 {
                     Console.WriteLine(ex.ToString());
                 }
+                await Task.Delay(5000);
             }
         }
 

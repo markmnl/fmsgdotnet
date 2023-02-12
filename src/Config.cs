@@ -9,6 +9,7 @@ namespace FMsg
     internal static class Config
     {
         public static int Port = FMsgHost.DefaultPort;
+        public static int RemotePort = 36901;
         public static string Domain { get; set; } = Environment.GetEnvironmentVariable("FMSG_DOMAIN") ?? "localhost";
         public static readonly uint MaxMessageSize = 1024 * 10;
         public static bool AllowSkipChallenge = false;

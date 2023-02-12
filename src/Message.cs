@@ -41,6 +41,7 @@ namespace FMsg
         public string? Topic { get; set; }
         public string Type { get; private set; } = String.Empty;
         public string BodyFilepath { get; private set; }
+        public uint? BodySize { get; private set; }
         public IPEndPoint RemoteEndPoint { get; set; }
         // TODO attachments
 
@@ -69,6 +70,7 @@ namespace FMsg
             Type = "text/plain; charset=utf-8"; // see https://www.iana.org/assignments/media-types/media-types.xhtml
             var bytes = Encoding.UTF8.GetBytes(body);
             BodyFilepath = Store.StoreOutgoing(this, bytes);
+            BodySize = (uint)bytes.Length;
         }
 
         public void SetImportant() { SetFlag(FmsgFlag.Important); }
@@ -90,6 +92,10 @@ namespace FMsg
                 throw new InvalidFmsgException("At least one recipient in To is required");
             if (Timestamp < 1)
                 throw new InvalidFmsgException($"Invalid Timestamp: {Timestamp}");
+            if (String.IsNullOrEmpty(BodyFilepath))
+                throw new InvalidFmsgException("Body not set");
+            if (!File.Exists(BodyFilepath))
+                throw new InvalidFmsgException($"Body file not found: {BodyFilepath}");
         }
 
         public byte[] EncodeHeader()
