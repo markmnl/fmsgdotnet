@@ -12,10 +12,12 @@ namespace FMsg
             var ext = MimeTypeMap.GetExtension(msg.Type, throwErrorIfNotFound: false);
             if (msg.Timestamp == default)
                 msg.Timestamp = DateTime.UtcNow.Timestamp();
-            var filepath = Path.Join(Config.DataDir, msg.Timestamp.ToString(), ext);
+            string? filepath = Path.Join(Config.DataDir, msg.Timestamp.ToString(), ext);
 
             Directory.CreateDirectory(Path.GetDirectoryName(filepath));
             File.WriteAllBytes(filepath, data);
+
+            var tst = File.ReadAllBytes(filepath);
 
             return filepath;
         }

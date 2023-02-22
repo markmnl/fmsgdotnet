@@ -103,8 +103,8 @@ namespace FMsg
             // validate this msg first
             ValidateHeader();
 
-            // seralise to the spec: https://github.com/markmnl/fmsg#definition
-            using(var stream = new MemoryStream())
+            // seralise to the spec: https://github.com/markmnl/fmsg/blob/main/SPECIFICATION.md#definition
+            using (var stream = new MemoryStream())
             using(var writer = new BinaryWriter(stream))
             {
                 writer.Write(Version);

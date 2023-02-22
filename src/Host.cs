@@ -25,6 +25,9 @@ namespace FMsg
         }
     }
 
+    /// <summary>
+    /// https://github.com/markmnl/fmsg/blob/main/SPECIFICATION.md#reject-or-accept-response
+    /// </summary>
     public enum RejectAcceptCode : byte
     {
         Undisclosed = 1,
@@ -33,6 +36,7 @@ namespace FMsg
         ParentNotFound = 4,
         PastTime = 5,
         FutureTime = 6,
+        TimeTravel = 7,
 
         UserUnknown = 100,
         UserFull = 101,
@@ -131,26 +135,26 @@ namespace FMsg
                         // send the header, size and body..
                         Console.WriteLine($"--> {host} {headerHash.ToHexString()}");
                         await client.SendAsync(header);
+
                         var sizeInBytes = BitConverter.GetBytes(msg.BodySize.Value);
                         await client.SendAsync(sizeInBytes);
                         using var ns = new NetworkStream(client);
-                        using var fs = new FileStream(msg.BodyFilepath, FileMode.Open);
+                        using var fs = File.OpenRead(msg.BodyFilepath);
                         await fs.CopyToAsync(ns);
 
                         var hostRecipients = msg.To.Where(addr => String.Equals(addr.Domain, host, StringComparison.OrdinalIgnoreCase)).ToArray();
                         var buffer = new byte[hostRecipients.Length];
-                        var count = await client.ReceiveAsync(buffer); // TODO why not timing out?
+                        var count = await client.ReceiveAsync(buffer);
                         if (count == 0)
                         {
                             Console.WriteLine($"Failed to send to, {host}: EOF");
                         }
-                        else if (count == 1)
+                        else if (count == 1 && buffer[0] < 100) // https://github.com/markmnl/fmsg/blob/main/SPECIFICATION.md#reject-or-accept-response
                         {
                             Console.WriteLine($"Failed to send to, {host}: REJECTED - {(RejectAcceptCode)buffer[0]}");
                         }
                         else
                         {
-
                             if (count != hostRecipients.Length)
                             {
                                 Console.WriteLine($"Recieved unexpected number of RejectAccept codes, expected: {hostRecipients.Length}, got: {count}");
@@ -164,8 +168,8 @@ namespace FMsg
                                 }
                             }
                         }
-                        client.Close();
                         client.Shutdown(SocketShutdown.Both);
+                        client.Close();
                     }
                     catch (Exception ex)
                     {
