@@ -17,8 +17,6 @@ namespace FMsg
             Directory.CreateDirectory(Path.GetDirectoryName(filepath));
             File.WriteAllBytes(filepath, data);
 
-            var tst = File.ReadAllBytes(filepath);
-
             return filepath;
         }
 

@@ -52,14 +52,14 @@ namespace FmsgExtensions
 
     public static class DateTimeExtensions
     {
-        public static DateTime FromTimestamp(this long unixTime)
+        public static DateTime FromTimestamp(this double unixTime)
         {
             return DateTime.UnixEpoch.AddSeconds(unixTime);
         }
 
-        public static long Timestamp(this DateTime date)
+        public static double Timestamp(this DateTime date)
         {
-            return Convert.ToInt64((date - DateTime.UnixEpoch).TotalSeconds);
+            return (date - DateTime.UnixEpoch).TotalSeconds;
         }
     }
 

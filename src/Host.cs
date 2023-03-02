@@ -133,7 +133,7 @@ namespace FMsg
                         await client.ConnectAsync(host, port);
 
                         // send the header, size and body..
-                        Console.WriteLine($"--> {host} {headerHash.ToHexString()}");
+                        Console.WriteLine($"--> Sending to: {host} {headerHash.ToHexString()}");
                         await client.SendAsync(header);
 
                         var sizeInBytes = BitConverter.GetBytes(msg.BodySize.Value);
@@ -149,7 +149,7 @@ namespace FMsg
                         {
                             Console.WriteLine($"Failed to send to, {host}: EOF");
                         }
-                        else if (count == 1 && buffer[0] < 100) // https://github.com/markmnl/fmsg/blob/main/SPECIFICATION.md#reject-or-accept-response
+                        else if (count == 1 && buffer[0] < 100) // i.e. rejection for all https://github.com/markmnl/fmsg/blob/main/SPECIFICATION.md#reject-or-accept-response
                         {
                             Console.WriteLine($"Failed to send to, {host}: REJECTED - {(RejectAcceptCode)buffer[0]}");
                         }
@@ -226,7 +226,7 @@ namespace FMsg
                 if (recipients.Length == 0)
                     throw new FmsgProtocolException($"recieved message has no recipients for {Config.Domain}");
 
-                // TODO check we know recepients
+                // TODO check we know recipients
                 
                 // check message size
                 RejectAcceptCode[] response;

@@ -37,7 +37,7 @@ namespace FMsg
         public byte[]? Pid { get; set; }
         public FMsgAddress From { get; private set; }
         public FMsgAddress[] To { get; set; } = new FMsgAddress[0];
-        public long Timestamp { get; internal set; }
+        public double Timestamp { get; internal set; }
         public string? Topic { get; set; }
         public string Type { get; private set; } = String.Empty;
         public string BodyFilepath { get; private set; }
@@ -90,7 +90,7 @@ namespace FMsg
                 throw new InvalidFmsgException("Type is required");
             if (To.Length == 0)
                 throw new InvalidFmsgException("At least one recipient in To is required");
-            if (Timestamp < 1)
+            if (Timestamp < 1.0)
                 throw new InvalidFmsgException($"Invalid Timestamp: {Timestamp}");
             if (String.IsNullOrEmpty(BodyFilepath))
                 throw new InvalidFmsgException("Body not set");
@@ -105,7 +105,7 @@ namespace FMsg
 
             // seralise to the spec: https://github.com/markmnl/fmsg/blob/main/SPECIFICATION.md#definition
             using (var stream = new MemoryStream())
-            using(var writer = new BinaryWriter(stream))
+            using (var writer = new BinaryWriter(stream))
             {
                 writer.Write(Version);
                 writer.Write((byte)Flags);
