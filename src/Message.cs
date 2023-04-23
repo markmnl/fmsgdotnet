@@ -1,5 +1,7 @@
 using FmsgExtensions;
+using System;
 using System.Net;
+using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -162,9 +164,22 @@ namespace FMsg
             if (messageHash == null)
             {
                 using (var hasher = SHA256.Create())
-                using (var fileStream = File.OpenRead(BodyFilepath))
                 {
-                    messageHash = await hasher.ComputeHashAsync(fileStream);
+                    var headerBytes = EncodeHeader();
+                    hasher.TransformBlock(headerBytes, 0, headerBytes.Length, null, 0);
+
+                    using (var stream = File.OpenRead(BodyFilepath))
+                    {
+                        var buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            hasher.TransformBlock(buffer, 0, bytesRead, null, 0);
+                        }
+                        // TODO attachments
+                        hasher.TransformFinalBlock(new byte[0], 0, 0);
+                        messageHash = hasher.Hash;
+                    }
                 }
             }
 

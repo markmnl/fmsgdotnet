@@ -140,11 +140,13 @@ namespace FMsg
                         await client.SendAsync(sizeInBytes);
                         using var ns = new NetworkStream(client);
                         using var fs = File.OpenRead(msg.BodyFilepath);
+                        ns.WriteTimeout = Config.SendTimeout; // TODO use rate * size
                         await fs.CopyToAsync(ns);
 
                         var hostRecipients = msg.To.Where(addr => String.Equals(addr.Domain, host, StringComparison.OrdinalIgnoreCase)).ToArray();
                         var buffer = new byte[hostRecipients.Length];
-                        var count = await client.ReceiveAsync(buffer);
+                        Console.WriteLine($"Downloading message body...");
+                        var count = await client.ReceiveAsync(buffer); // TODO async timeout doesnt use timeouts above
                         if (count == 0)
                         {
                             Console.WriteLine($"Failed to send to, {host}: EOF");
@@ -200,7 +202,9 @@ namespace FMsg
                     if (outgoing.TryGetValue(headerHash, out outgoingMsg))
                     {
                         var msgHash = await outgoingMsg.CalcMessageHashAsync();
+                        Console.WriteLine($"\tCHALLENGE found, sending response...");
                         await sock.SendAsync(msgHash);
+                        Console.WriteLine($"\tCHALLENGE response sent!");
                     }
                     else
                     {

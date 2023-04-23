@@ -15,7 +15,7 @@ namespace FMsg
         public static bool AllowSkipChallenge = false;
         public static string DataDir { get; set; } = Environment.GetEnvironmentVariable("FMSG_DATA_DIR") ?? "/tmp/fmsgdata4";
         public static string IncomingDir { get; set; } = Path.Join(DataDir, "tmp");
-        public static int SendTimeout { get; set; } = int.Parse(Environment.GetEnvironmentVariable("FMSG_SEND_TIMEOUT") ?? "2") * 1000;
-        public static int ReceiveTimeout { get; set; } = int.Parse(Environment.GetEnvironmentVariable("FMSG_RECEIVE_TIMEOUT") ?? "2") * 1000;
+        public static int SendTimeout { get; set; } = int.Parse(Environment.GetEnvironmentVariable("FMSG_SEND_TIMEOUT") ?? "10") * 1000;
+        public static int ReceiveTimeout { get; set; } = int.Parse(Environment.GetEnvironmentVariable("FMSG_RECEIVE_TIMEOUT") ?? "10") * 1000;
     }
 }

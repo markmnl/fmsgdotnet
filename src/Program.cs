@@ -49,7 +49,7 @@ namespace FMsg
                 try 
                 {
                     // TODO watch out dir
-                    var msg = new FMsgMessage("@markmnl@localhost", new string[] { "@test@localhost" }, "Genisis");
+                    var msg = new FMsgMessage("@markmnl2@localhost", new string[] { "@markmnl@localhost" }, "Genisis");
                     Console.WriteLine($"sending msg {msg.From} --> { String.Join(", ", (object[])msg.To)} {msg.Timestamp}");
                     msg.SetBodyUTF8("Hello fmsg!");
                     await host.SendAsync(msg, Config.RemotePort);
